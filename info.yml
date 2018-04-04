@@ -108,7 +108,12 @@ configuration:
     burnin_path:
         type: template
         fields: context
-        description: Template for burnin nuke file path
+        description: Template for burnin nuke file path.
+
+    render_script:
+        type: template
+        fields: context
+        description: Template for python script executed by nuke subprocess.
 
 # the Shotgun fields that this app needs in order to operate correctly
 requires_shotgun_fields:

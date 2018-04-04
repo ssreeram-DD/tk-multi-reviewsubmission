@@ -10,6 +10,7 @@
 
 import sgtk
 import os
+import copy
 import pickle
 import sys
 import subprocess
@@ -28,17 +29,17 @@ class Renderer(object):
         """
         self.__app = sgtk.platform.current_bundle()
         self._font = os.path.join(self.__app.disk_location, "resources", "liberationsans_regular.ttf")
-        context_fields = self.__app.context.as_template_fields()
+        self._context_fields = self.__app.context.as_template_fields()
 
         burnin_template = self.__app.get_template("burnin_path")
-        self._burnin_nk = burnin_template.apply_fields(context_fields)
+        self._burnin_nk = burnin_template.apply_fields(self._context_fields)
         # If a show specific burnin file has not been defined, take it from the default location
         if not os.path.isfile(self._burnin_nk):
             self._burnin_nk = os.path.join(self.__app.disk_location, "resources", "burnin.nk")
 
         self._logo = None
         logo_template = self.__app.get_template("slate_logo")
-        logo_file_path = logo_template.apply_fields(context_fields)
+        logo_file_path = logo_template.apply_fields(self._context_fields)
         if os.path.isfile(logo_file_path):
             self._logo = logo_file_path
         else:
@@ -65,8 +66,14 @@ class Renderer(object):
         writenode_quicktime_settings = self.__app.execute_hook_method("codec_settings_hook",
                                                                       "get_quicktime_settings")
 
-        render_script_path = os.path.join(self.__app.disk_location, "hooks",
-                                          "nuke_batch_render_movie.py")
+        # making the python script passed to nuke configurable as a setting because
+        # making it a hook would still not allow us to subprocess it out
+        render_script_template = self.__app.get_template("render_script")
+        render_script_path = render_script_template.apply_fields(self._context_fields)
+        # If a show specific render script has not been defined, take it from the default location
+        if not os.path.isfile(render_script_path):
+            render_script_path = os.path.join(self.__app.disk_location, "hooks",
+                                              "nuke_batch_render_movie.py")
 
         serialized_context = self.__app.context.serialize()
 
@@ -172,7 +179,9 @@ class ShooterThread(QtCore.QThread):
             '--render_info', pickle.dumps(self.render_info['render_info']),
         ]
 
-        p = subprocess.Popen(cmd_and_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        env = copy.deepcopy(os.environ)
+        env["TANK_CONTEXT"] = self.render_info['serialized_context']
+        p = subprocess.Popen(cmd_and_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
 
         output_name = os.path.basename(self.render_info['movie_output_path'])
         # TODO: How is this supposed to work?
