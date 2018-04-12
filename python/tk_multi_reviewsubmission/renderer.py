@@ -11,9 +11,13 @@
 import sgtk
 import os
 import copy
+from datetime import datetime
+import hashlib
 import pickle
+import re
 import sys
 import subprocess
+import time
 from sgtk.platform.qt import QtCore
 
 try:
@@ -55,7 +59,7 @@ class Renderer(object):
                                 width, height,
                                 first_frame, last_frame,
                                 version, name,
-                                color_space):
+                                color_space, tmp_nuke_file_path):
         # First get Nuke executable path from project configuration environment
         setting_key_by_os = {'win32': 'nuke_windows_path',
                              'linux2': 'nuke_linux_path',
@@ -83,7 +87,7 @@ class Renderer(object):
         }
 
         render_info = {
-            'burnin_nk': self._burnin_nk,
+            'burnin_nk': tmp_nuke_file_path,
             'slate_font': self._font,
             'codec_settings': {'quicktime': writenode_quicktime_settings},
         }
@@ -110,15 +114,149 @@ class Renderer(object):
         }
         return nuke_render_info
 
+    def replaceVars(self, attr, data):
+        """
+        Replace the variables in a nuke script
+        Variables defined by [* *] or \[* *]
+        """
+        # get rid of nukes escape characters (fancy, huh)
+        attr = attr.replace("\[*", "[*")
+
+        # look for anything with a [* *] pattern
+        vars = re.compile("\[\*[A-Za-z_ %/:0-9()\-,.\+]+\*\]").findall(attr)
+
+        dt = datetime.now()
+
+        for var in vars:
+            var_tmp = var.replace("[*", "").replace("*]", "")
+            # Replace the date/time variables
+            if var_tmp.startswith('date '):
+                date_str = var_tmp.replace('date ', '')
+                attr = attr.replace(var, dt.strftime(date_str))
+
+            # TODO: handle html tags in data :/
+            # TODO: do we handle this differently?
+            # Replace the frame number variables
+            elif (var_tmp.lower() == "numframes" and
+                          data.get('ff') != None and data.get('ff') != '' and
+                          data.get('lf') != None and data.get('lf') != ''):
+                range = str(int(data.get('lf')) - int(data.get('ff')))
+                attr = attr.replace(var, range)
+
+            # and the increment that may be at the end of the frame number
+            elif "+" in var_tmp.lower():
+                (tmp, num) = var_tmp.split("+")
+                sum = str(int(data.get(tmp)) + int(num))
+                attr = attr.replace(var, sum)
+
+            # make it easier to enter screen coordinates
+            # that vary with resolution, by normalizing to
+            # (-0.5 -0.5) to (0.5 0.5)
+            elif "screenspace" in var_tmp.lower():
+                var_tmp = var_tmp.replace("(", " ").replace(",", " ").replace(")", " ")
+                (key, xString, yString) = var_tmp.split()
+                xFloat = float(xString) + 0.5
+                yFloat = float(yString) + 0.5
+                translateString = (
+                "{{SHUFFLE_CONSTANT.actual_format.width*(%s) i} {SHUFFLE_CONSTANT.actual_format.height*(%s) i}}" % (
+                str(xFloat), str(yFloat)))
+                attr = attr.replace(var, translateString)
+
+                # Replace the showname
+            # (now resolved in resolveMainProcessVariables)
+            elif var_tmp == "showname":
+                attr = attr.replace(var, str(data.get('showname')))
+
+            # TODO: do we handle this differently?
+            # Replace level
+            elif var_tmp == 'level':
+                show_upper_case = os.environ.get('DD_SHOWS_ROOT') + "/" + data.get('show').upper()
+                show_lower_case = os.environ.get('DD_SHOWS_ROOT') + "/" + data.get('show').lower()
+                facility = os.environ.get('DD_FACILITY_ROOT')
+                level_found = False
+                for level in [show_upper_case, show_lower_case, facility]:
+                    # testpath = attr.replace("[*level*]",level)
+                    log.debug("nukeAppendScript.replaceLevel - Looking for path %s" % level)
+                    if os.path.exists(xpath(level)):
+                        attr = attr.replace(var, str(level))
+                        level_found = True
+                        break
+                if not level_found:
+                    msg = "The path to replace [*level*] could not be found. Please make "
+                    msg += "sure you are setting the correct "
+                    msg += "path and try again."
+                    log.critical(msg)
+
+            # TODO: do we handle this differently?
+            # Replace the client number
+            elif var_tmp == 'clientnum':
+                if not hasattr(self, "clientnum"):
+                    attr = attr.replace(var, str(data.get('clientnum')))
+
+            # TODO: we handle this differently
+            elif var_tmp == 'version_data':
+                if not hasattr(self, "version_data"):
+                    attr = attr.replace(var, str(data.get('version_data')))
+
+            # TODO: do we handle this differently?
+            # Replace the lens variable
+            elif var_tmp == "lens":
+                if not hasattr(self, "slate_lens"):
+                    attr = attr.replace(var, str(data.get('slate_lens')))
+
+            # TODO: do we handle this differently?
+            # Replace the slate_notes, notes, daily_status variable
+            elif var_tmp == "slate_notes" or var_tmp == "notes" or var_tmp == "daily_status":
+                replaceval = str(data.get(var_tmp))
+                # escape characters
+                replaceval = replaceval.replace("\\", "\\\\")
+                replaceval = replaceval.replace("\"", "\\\"")
+                replaceval = replaceval.replace("\'", "\\\'")
+                attr = attr.replace(var, str(replaceval))
+
+            # remove knobs that have a [**] value but nothing in data
+            elif (data.get(var_tmp) == '' or
+                          data.get(var_tmp) == None or
+                          data.get(var_tmp) == "None"):
+                regexp = ".*\[\*"
+                regexp += var_tmp
+                regexp += "\*\].*"
+                line = re.compile(regexp).findall(attr)
+                if line != None and len(line) > 0:
+                    if line[0].count('message') > 0:
+                        attr = attr.replace(var, str('""'))
+                    else:
+                        attr = attr.replace(var, "None")
+
+            else:
+                replaceval = str(data.get(var_tmp))
+                if (replaceval == ""):
+                    replaceval == '""'
+                attr = attr.replace(var, str(replaceval))
+        return attr
+    # end replaceVars
+
     def render_movie_in_nuke(self, path, output_path,
                              width, height,
                              first_frame, last_frame,
                              version, name,
                              color_space,
+                             replace_data,
                              active_progress_info=None):
+        # replace tokens in self._burnin_nk and save it in /var/tmp
+        tmp_file_prefix = "reviewsubmission_tmp_nuke_script"
+        tmp_file_name = "%s_%s.nk" % (tmp_file_prefix, hashlib.md5(str(time.time())).hexdigest())
+        tmp_full_path = os.path.join("/var", "tmp", tmp_file_name)
+
+        # TESTING:
+        print "Saving to: ", tmp_full_path
+        with open(self._burnin_nk, 'r') as source_script_file, open(tmp_full_path, 'w') as tmp_script_file:
+            nuke_script_text = source_script_file.read()
+            nuke_script_text = self.replaceVars(nuke_script_text, replace_data)
+            tmp_script_file.write(nuke_script_text)
 
         render_info = self.gather_nuke_render_info(path, output_path, width, height, first_frame,
-                                                   last_frame, version, name, color_space)
+                                                   last_frame, version, name, color_space, tmp_full_path)
         run_in_batch_mode = True if nuke is None else False
 
         event_loop = QtCore.QEventLoop()
