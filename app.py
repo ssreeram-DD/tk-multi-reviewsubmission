@@ -140,7 +140,10 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
 
         # TODO: what happens if the entity doesn't have that field?
         sg_fields = ["smart_cut_summary_display",
-                     "sg_client_name"]
+                     "sg_client_name",
+                     "sg_lens___primary",
+                     "sg_head_in",
+                     "sg_tail_out"]
 
         replace_data = self.shotgun.find_one(sg_entity_type, filters=sg_filters, fields=sg_fields)
         replace_data.update(fields)
@@ -149,8 +152,6 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
         # TODO: publisher.util.get_publish_name() does this much better
         replace_data["file_base_name"] = os.path.basename(path).split('.')[0]
 
-        # TESTING:
-        print replace_data
         # Render and Submit
         progress_cb(20, "Rendering movie")
         renderer = tk_multi_reviewsubmission.Renderer()
@@ -173,6 +174,8 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
                                               store_on_disk,
                                               first_frame, 
                                               last_frame,
+                                              replace_data["sg_head_in"],
+                                              replace_data["sg_tail_out"],
                                               upload_to_shotgun,
                                               version_name)
             
