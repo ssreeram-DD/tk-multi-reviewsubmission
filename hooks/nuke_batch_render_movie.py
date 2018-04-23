@@ -100,7 +100,7 @@ def render_movie_in_nuke(path, output_path,
         read["first"].setValue(first_frame)
         read["last"].setValue(last_frame)
         if color_space:
-            read["colorspace"].setValue(color_space)
+            read["colorspace"].setValue(str(color_space))
 
         if is_subprocess:
             # set root_format = res of read node
