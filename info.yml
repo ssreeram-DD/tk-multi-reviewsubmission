@@ -109,11 +109,13 @@ configuration:
         type: template
         fields: context
         description: Template for burnin nuke file path.
+        allows_empty: True
 
     render_script:
         type: template
         fields: context
         description: Template for python script executed by nuke subprocess.
+        allows_empty: True
 
 # the Shotgun fields that this app needs in order to operate correctly
 requires_shotgun_fields:

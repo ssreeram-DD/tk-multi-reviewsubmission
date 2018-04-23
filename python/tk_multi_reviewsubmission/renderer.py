@@ -35,8 +35,10 @@ class Renderer(object):
         self._font = os.path.join(self.__app.disk_location, "resources", "liberationsans_regular.ttf")
         self._context_fields = self.__app.context.as_template_fields()
 
+        self._burnin_nk = ''
         burnin_template = self.__app.get_template("burnin_path")
-        self._burnin_nk = burnin_template.apply_fields(self._context_fields)
+        if burnin_template:
+            self._burnin_nk = burnin_template.apply_fields(self._context_fields)
         # If a show specific burnin file has not been defined, take it from the default location
         if not os.path.isfile(self._burnin_nk):
             self._burnin_nk = os.path.join(self.__app.disk_location, "resources", "burnin.nk")
@@ -59,7 +61,7 @@ class Renderer(object):
                                 width, height,
                                 first_frame, last_frame,
                                 version, name,
-                                color_space, tmp_nuke_file_path):
+                                color_space, burnin_nk):
         # First get Nuke executable path from project configuration environment
         setting_key_by_os = {'win32': 'nuke_windows_path',
                              'linux2': 'nuke_linux_path',
@@ -72,8 +74,11 @@ class Renderer(object):
 
         # making the python script passed to nuke configurable as a setting because
         # making it a hook would still not allow us to subprocess it out
+        render_script_path = ''
         render_script_template = self.__app.get_template("render_script")
-        render_script_path = render_script_template.apply_fields(self._context_fields)
+        if render_script_template:
+            render_script_path = render_script_template.apply_fields(self._context_fields)
+
         # If a show specific render script has not been defined, take it from the default location
         if not os.path.isfile(render_script_path):
             render_script_path = os.path.join(self.__app.disk_location, "hooks",
@@ -87,7 +92,7 @@ class Renderer(object):
         }
 
         render_info = {
-            'burnin_nk': tmp_nuke_file_path,
+            'burnin_nk': burnin_nk,
             'slate_font': self._font,
             'codec_settings': {'quicktime': writenode_quicktime_settings},
         }
@@ -248,8 +253,7 @@ class Renderer(object):
         tmp_file_name = "%s_%s.nk" % (tmp_file_prefix, hashlib.md5(str(time.time())).hexdigest())
         tmp_full_path = os.path.join("/var", "tmp", tmp_file_name)
 
-        # TESTING:
-        print "Saving to: ", tmp_full_path
+        self.__app.log_debug("Saving nuke script to: {}".format(tmp_full_path))
         with open(self._burnin_nk, 'r') as source_script_file, open(tmp_full_path, 'w') as tmp_script_file:
             nuke_script_text = source_script_file.read()
             nuke_script_text = self.replaceVars(nuke_script_text, replace_data)

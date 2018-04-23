@@ -135,18 +135,22 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
         if version_template:
             version_name = version_template.apply_fields(fields)
 
-        sg_entity_type = self.context.entity["type"]
-        sg_filters = [["id", "is", self.context.entity["id"]]]
+        # create a dict with fields and some additional information about the
+        # current entity to replace tokens with the same name present in the
+        # review submission nuke script
+        replace_data = copy.deepcopy(fields)
+        if self.context.entity:
+            sg_entity_type = self.context.entity["type"]
+            sg_filters = [["id", "is", self.context.entity["id"]]]
 
-        # TODO: what happens if the entity doesn't have that field?
-        sg_fields = ["smart_cut_summary_display",
-                     "sg_client_name",
-                     "sg_lens___primary",
-                     "sg_head_in",
-                     "sg_tail_out"]
-
-        replace_data = self.shotgun.find_one(sg_entity_type, filters=sg_filters, fields=sg_fields)
-        replace_data.update(fields)
+            sg_fields = ["smart_cut_summary_display",
+                         "sg_client_name",
+                         "sg_lens___primary",
+                         "sg_head_in",
+                         "sg_tail_out"]
+            replace_data.update(self.shotgun.find_one(sg_entity_type,
+                                                      filters=sg_filters,
+                                                      fields=sg_fields))
 
         replace_data["description"] = comment
         # TODO: publisher.util.get_publish_name() does this much better
