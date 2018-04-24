@@ -119,6 +119,10 @@ class Renderer(object):
         }
         return nuke_render_info
 
+    @staticmethod
+    def remove_html(string):
+        return re.sub('<.+?>', '', string)
+
     def replaceVars(self, attr, data):
         """
         Replace the variables in a nuke script
@@ -139,13 +143,11 @@ class Renderer(object):
                 date_str = var_tmp.replace('date ', '')
                 attr = attr.replace(var, dt.strftime(date_str))
 
-            # TODO: handle html tags in data :/
-            # TODO: do we handle this differently?
             # Replace the frame number variables
             elif (var_tmp.lower() == "numframes" and
-                          data.get('ff') != None and data.get('ff') != '' and
-                          data.get('lf') != None and data.get('lf') != ''):
-                range = str(int(data.get('lf')) - int(data.get('ff')))
+                          data.get('first_frame') != None and data.get('first_frame') != '' and
+                          data.get('last_frame') != None and data.get('last_frame') != ''):
+                range = str(int(data.get('lf')) - int(data.get('first_frame')))
                 attr = attr.replace(var, range)
 
             # and the increment that may be at the end of the frame number
@@ -167,57 +169,11 @@ class Renderer(object):
                 str(xFloat), str(yFloat)))
                 attr = attr.replace(var, translateString)
 
-                # Replace the showname
+            # TODO: do we handle this differently?
+            # Replace the showname
             # (now resolved in resolveMainProcessVariables)
             elif var_tmp == "showname":
                 attr = attr.replace(var, str(data.get('showname')))
-
-            # TODO: do we handle this differently?
-            # Replace level
-            elif var_tmp == 'level':
-                show_upper_case = os.environ.get('DD_SHOWS_ROOT') + "/" + data.get('show').upper()
-                show_lower_case = os.environ.get('DD_SHOWS_ROOT') + "/" + data.get('show').lower()
-                facility = os.environ.get('DD_FACILITY_ROOT')
-                level_found = False
-                for level in [show_upper_case, show_lower_case, facility]:
-                    # testpath = attr.replace("[*level*]",level)
-                    log.debug("nukeAppendScript.replaceLevel - Looking for path %s" % level)
-                    if os.path.exists(xpath(level)):
-                        attr = attr.replace(var, str(level))
-                        level_found = True
-                        break
-                if not level_found:
-                    msg = "The path to replace [*level*] could not be found. Please make "
-                    msg += "sure you are setting the correct "
-                    msg += "path and try again."
-                    log.critical(msg)
-
-            # TODO: do we handle this differently?
-            # Replace the client number
-            elif var_tmp == 'clientnum':
-                if not hasattr(self, "clientnum"):
-                    attr = attr.replace(var, str(data.get('clientnum')))
-
-            # TODO: we handle this differently
-            elif var_tmp == 'version_data':
-                if not hasattr(self, "version_data"):
-                    attr = attr.replace(var, str(data.get('version_data')))
-
-            # TODO: do we handle this differently?
-            # Replace the lens variable
-            elif var_tmp == "lens":
-                if not hasattr(self, "slate_lens"):
-                    attr = attr.replace(var, str(data.get('slate_lens')))
-
-            # TODO: do we handle this differently?
-            # Replace the slate_notes, notes, daily_status variable
-            elif var_tmp == "slate_notes" or var_tmp == "notes" or var_tmp == "daily_status":
-                replaceval = str(data.get(var_tmp))
-                # escape characters
-                replaceval = replaceval.replace("\\", "\\\\")
-                replaceval = replaceval.replace("\"", "\\\"")
-                replaceval = replaceval.replace("\'", "\\\'")
-                attr = attr.replace(var, str(replaceval))
 
             # remove knobs that have a [**] value but nothing in data
             elif (data.get(var_tmp) == '' or
@@ -234,7 +190,7 @@ class Renderer(object):
                         attr = attr.replace(var, "None")
 
             else:
-                replaceval = str(data.get(var_tmp))
+                replaceval = self.remove_html(str(data.get(var_tmp)))
                 if (replaceval == ""):
                     replaceval == '""'
                 attr = attr.replace(var, str(replaceval))

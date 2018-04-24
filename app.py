@@ -152,6 +152,8 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
                                                       filters=sg_filters,
                                                       fields=sg_fields))
 
+        replace_data["first_frame"] = first_frame
+        replace_data["last_frame"] = last_frame
         replace_data["description"] = comment
         # TODO: publisher.util.get_publish_name() does this much better
         replace_data["file_base_name"] = os.path.basename(path).split('.')[0]
