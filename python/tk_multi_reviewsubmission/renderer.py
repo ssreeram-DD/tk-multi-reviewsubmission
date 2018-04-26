@@ -20,6 +20,7 @@ import subprocess
 import time
 from sgtk.platform.qt import QtCore
 
+
 try:
     import nuke
 except ImportError:
@@ -228,9 +229,7 @@ class Renderer(object):
         # log any errors generated in the thread
         thread_error_msg = thread.get_errors()
         if thread_error_msg:
-            self.__app.log_error("OUTPUT:\n" + thread.get_output())
             self.__app.log_error("ERROR:\n" + thread_error_msg)
-
             # Do not clutter user message with any warnings etc from Nuke. Print only traceback.
             # TODO: is there a better way?
             try:
@@ -247,13 +246,9 @@ class ShooterThread(QtCore.QThread):
         self.batch_mode = batch_mode
         self.active_progress_info = active_progress_info
         self.subproc_error_msg = ''
-        self.subproc_output = ''
 
     def get_errors(self):
         return self.subproc_error_msg
-
-    def get_output(self):
-        return self.subproc_output
 
     def run(self):
         if self.batch_mode:
@@ -279,40 +274,14 @@ class ShooterThread(QtCore.QThread):
 
         env = copy.deepcopy(os.environ)
         env["TANK_CONTEXT"] = self.render_info['serialized_context']
-        p = subprocess.Popen(cmd_and_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+        p = subprocess.Popen(cmd_and_args, stderr=subprocess.PIPE, env=env, bufsize=1)
 
-        output_name = os.path.basename(self.render_info['movie_output_path'])
-        # TODO: How is this supposed to work?
-        progress_fn = progress_label = None
-        if self.active_progress_info:
-            progress_fn = self.active_progress_info.get('show_progress_fn')
-            progress_label = self.active_progress_info.get('label')
-
-        output_lines = []
         error_lines = []
 
-        num_frames = self.render_info['last_frame'] - self.render_info['first_frame'] + 1
-        write_count = 0
-
         while p.poll() is None:
-            stdout_line = p.stdout.readline()
             stderr_line = p.stderr.readline()
-
-            if stdout_line != '':
-                output_lines.append(stdout_line.rstrip())
             if stderr_line != '':
                 error_lines.append(stderr_line.rstrip())
 
-            percent_complete = float(write_count) / float(num_frames) * 100.0
-            if progress_fn:
-                progress_fn(progress_label,
-                            'Nuke: {0:03.1f}%, {1}'.format(percent_complete, output_name))
-                # TODO: emit a signal to be captured by calling thread to update UI?
-
-            if stdout_line.startswith('Writing '):
-                # The number of these lines will be number of frames + 1
-                write_count += 1
-
-        self.subproc_output = '\n'.join(output_lines)
         if p.returncode != 0:
             self.subproc_error_msg = '\n'.join(error_lines)
