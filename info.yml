@@ -90,6 +90,12 @@ configuration:
                      for review.
         default_value: '{self}/codec_settings.py'
 
+    preprocess_nuke_hook:
+        type: hook
+        description: Hook for doing any preprocessing to the burnin nuke script
+                     and return the processed script path.
+        default_value: '{self}/preprocess_nuke.py'
+
     nuke_linux_path:
         type: str
         description: The path to the application executable on Linux.

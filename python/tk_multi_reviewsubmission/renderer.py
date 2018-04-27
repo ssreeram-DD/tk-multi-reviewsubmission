@@ -120,84 +120,6 @@ class Renderer(object):
         }
         return nuke_render_info
 
-    @staticmethod
-    def remove_html(string):
-        return re.sub('<.+?>', '', string)
-
-    def replaceVars(self, attr, data):
-        """
-        Replace the variables in a nuke script
-        Variables defined by [* *] or \[* *]
-        """
-        # get rid of nukes escape characters (fancy, huh)
-        attr = attr.replace("\[*", "[*")
-
-        # look for anything with a [* *] pattern
-        vars = re.compile("\[\*[A-Za-z_ %/:0-9()\-,.\+]+\*\]").findall(attr)
-
-        dt = datetime.now()
-
-        for var in vars:
-            var_tmp = var.replace("[*", "").replace("*]", "")
-            # Replace the date/time variables
-            if var_tmp.startswith('date '):
-                date_str = var_tmp.replace('date ', '')
-                attr = attr.replace(var, dt.strftime(date_str))
-
-            # Replace the frame number variables
-            elif (var_tmp.lower() == "numframes" and
-                          data.get('first_frame') != None and data.get('first_frame') != '' and
-                          data.get('last_frame') != None and data.get('last_frame') != ''):
-                range = str(int(data.get('lf')) - int(data.get('first_frame')))
-                attr = attr.replace(var, range)
-
-            # and the increment that may be at the end of the frame number
-            elif "+" in var_tmp.lower():
-                (tmp, num) = var_tmp.split("+")
-                sum = str(int(data.get(tmp)) + int(num))
-                attr = attr.replace(var, sum)
-
-            # make it easier to enter screen coordinates
-            # that vary with resolution, by normalizing to
-            # (-0.5 -0.5) to (0.5 0.5)
-            elif "screenspace" in var_tmp.lower():
-                var_tmp = var_tmp.replace("(", " ").replace(",", " ").replace(")", " ")
-                (key, xString, yString) = var_tmp.split()
-                xFloat = float(xString) + 0.5
-                yFloat = float(yString) + 0.5
-                translateString = (
-                "{{SHUFFLE_CONSTANT.actual_format.width*(%s) i} {SHUFFLE_CONSTANT.actual_format.height*(%s) i}}" % (
-                str(xFloat), str(yFloat)))
-                attr = attr.replace(var, translateString)
-
-            # TODO: do we handle this differently?
-            # Replace the showname
-            # (now resolved in resolveMainProcessVariables)
-            elif var_tmp == "showname":
-                attr = attr.replace(var, str(data.get('showname')))
-
-            # remove knobs that have a [**] value but nothing in data
-            elif (data.get(var_tmp) == '' or
-                          data.get(var_tmp) == None or
-                          data.get(var_tmp) == "None"):
-                regexp = ".*\[\*"
-                regexp += var_tmp
-                regexp += "\*\].*"
-                line = re.compile(regexp).findall(attr)
-                if line != None and len(line) > 0:
-                    if line[0].count('message') > 0:
-                        attr = attr.replace(var, str('""'))
-                    else:
-                        attr = attr.replace(var, "None")
-
-            else:
-                replaceval = self.remove_html(str(data.get(var_tmp)))
-                if (replaceval == ""):
-                    replaceval == '""'
-                attr = attr.replace(var, str(replaceval))
-        return attr
-    # end replaceVars
-
     def render_movie_in_nuke(self, path, output_path,
                              width, height,
                              first_frame, last_frame,
@@ -205,19 +127,15 @@ class Renderer(object):
                              color_space,
                              replace_data,
                              active_progress_info=None):
-        # replace tokens in self._burnin_nk and save it in /var/tmp
-        tmp_file_prefix = "reviewsubmission_tmp_nuke_script"
-        tmp_file_name = "%s_%s.nk" % (tmp_file_prefix, hashlib.md5(str(time.time())).hexdigest())
-        tmp_full_path = os.path.join("/var", "tmp", tmp_file_name)
-
-        self.__app.log_debug("Saving nuke script to: {}".format(tmp_full_path))
-        with open(self._burnin_nk, 'r') as source_script_file, open(tmp_full_path, 'w') as tmp_script_file:
-            nuke_script_text = source_script_file.read()
-            nuke_script_text = self.replaceVars(nuke_script_text, replace_data)
-            tmp_script_file.write(nuke_script_text)
+        # preprocess self._burnin_nk to replace tokens
+        processed_nuke_script_path = self.__app.execute_hook_method("preprocess_nuke_hook",
+                                                                    "get_processed_script",
+                                                                    nuke_script_path=self._burnin_nk,
+                                                                    replace_data=replace_data)
 
         render_info = self.gather_nuke_render_info(path, output_path, width, height, first_frame,
-                                                   last_frame, version, name, color_space, tmp_full_path)
+                                                   last_frame, version, name, color_space,
+                                                   processed_nuke_script_path)
         run_in_batch_mode = True if nuke is None else False
 
         event_loop = QtCore.QEventLoop()
