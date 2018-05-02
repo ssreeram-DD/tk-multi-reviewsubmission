@@ -23,7 +23,7 @@ class Submitter(object):
         self.__app = sgtk.platform.current_bundle()
     
     def submit_version(self, path_to_frames, path_to_movie, thumbnail_path, sg_publishes,
-                        sg_task, comment, store_on_disk, first_frame, last_frame, head_in, tail_out,
+                        sg_task, comment, store_on_disk, first_frame, last_frame,
                         upload_to_shotgun, version_name=None):
         """
         Create a version in Shotgun for this path and linked to this publish.
@@ -49,8 +49,8 @@ class Submitter(object):
             "sg_status_list": self.__app.get_setting("new_version_status"),
             "entity": ctx.entity,
             "sg_task": sg_task,
-            "sg_first_frame": head_in,
-            "sg_last_frame": tail_out,
+            "sg_first_frame": first_frame,
+            "sg_last_frame": last_frame,
             "frame_count": (last_frame-first_frame+1),
             "frame_range": "%s-%s" % (first_frame, last_frame),
             "sg_frames_have_slate": False,
@@ -141,4 +141,3 @@ class UploaderThread(QtCore.QThread):
                 self._app.sgtk.shotgun.upload_thumbnail("Version", self._version["id"], self._thumbnail_path)
             except Exception, e:
                 self._errors.append("Thumbnail upload to Shotgun failed: %s" % e)
-
