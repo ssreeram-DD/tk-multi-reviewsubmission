@@ -125,13 +125,35 @@ class Renderer(object):
                              first_frame, last_frame,
                              version, name,
                              color_space,
-                             replace_data,
+                             fields=None,
                              active_progress_info=None):
+        """
+        Renders the movie using a Nuke subprocess,
+        along with slate/burnins using all the app settings.
+
+        :param path:            The path where frames should be found.
+        :param output_path:     The path where the movie should be written to
+        :param width:           Movie width
+        :param height:          Movie height
+        :param first_frame:     The first frame of the sequence of frames
+        :param last_frame:      The last frame of the sequence of frames
+        :param version:         Version currently being published
+        :param name:            Name of the file being published
+        :param color_space:     Colorspace used to create the frames
+        :param fields:          Any additional information to be used in slate/burnins
+        :param active_progress_info: Any function that receives the progress percentage
+                                     Can be used to update GUI
+        """
+        # add to information passed for preprocessing
+        fields["first_frame"] = first_frame
+        fields["last_frame"] = last_frame
+        fields["path"] = path
+
         # preprocess self._burnin_nk to replace tokens
         processed_nuke_script_path = self.__app.execute_hook_method("preprocess_nuke_hook",
                                                                     "get_processed_script",
                                                                     nuke_script_path=self._burnin_nk,
-                                                                    replace_data=replace_data)
+                                                                    replace_data=fields)
 
         render_info = self.gather_nuke_render_info(path, output_path, width, height, first_frame,
                                                    last_frame, version, name, color_space,

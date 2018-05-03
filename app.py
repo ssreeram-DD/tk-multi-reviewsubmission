@@ -135,28 +135,16 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
         if version_template:
             version_name = version_template.apply_fields(fields)
 
-        # create a dict with fields and some additional information about the
-        # current entity to replace tokens with the same name present in the
-        # review submission nuke script
-        replace_data = copy.deepcopy(fields)
+        # Get head_in, tail_out to pass to submitter
         if self.context.entity:
             sg_entity_type = self.context.entity["type"]
             sg_filters = [["id", "is", self.context.entity["id"]]]
-
-            sg_fields = ["smart_cut_summary_display",
-                         "sg_client_name",
-                         "sg_lens___primary",
-                         "sg_head_in",
+            sg_fields = ["sg_head_in",
                          "sg_tail_out"]
-            replace_data.update(self.shotgun.find_one(sg_entity_type,
-                                                      filters=sg_filters,
-                                                      fields=sg_fields))
-
-        replace_data["first_frame"] = first_frame
-        replace_data["last_frame"] = last_frame
-        replace_data["description"] = comment
-        # TODO: publisher.util.get_publish_name() does this much better
-        replace_data["file_base_name"] = os.path.basename(path).split('.')[0]
+            fields.update(self.shotgun.find_one(sg_entity_type,
+                                                filters=sg_filters,
+                                                fields=sg_fields))
+        fields["description"] = comment
 
         # Render and Submit
         progress_cb(20, "Rendering movie")
@@ -167,10 +155,10 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
                                       first_frame, last_frame,
                                       fields.get("version", 0), 
                                       fields.get("name", "Unnamed"),
-                                      color_space, replace_data)
+                                      color_space, fields)
 
-        sub_first_frame = replace_data["sg_head_in"] if replace_data["sg_head_in"] else first_frame
-        sub_last_frame = replace_data["sg_tail_out"] if replace_data["sg_tail_out"] else last_frame
+        sub_first_frame = fields["sg_head_in"] if fields["sg_head_in"] else first_frame
+        sub_last_frame = fields["sg_tail_out"] if fields["sg_tail_out"] else last_frame
 
         progress_cb(50, "Creating Shotgun Version and uploading movie")
         submitter = tk_multi_reviewsubmission.Submitter()
