@@ -153,7 +153,7 @@ class Renderer(object):
         processed_nuke_script_path = self.__app.execute_hook_method("preprocess_nuke_hook",
                                                                     "get_processed_script",
                                                                     nuke_script_path=self._burnin_nk,
-                                                                    replace_data=fields)
+                                                                    fields=fields)
 
         render_info = self.gather_nuke_render_info(path, output_path, width, height, first_frame,
                                                    last_frame, version, name, color_space,
