@@ -157,8 +157,8 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
                                       fields.get("name", "Unnamed"),
                                       color_space, fields)
 
-        sub_first_frame = fields["sg_head_in"] if fields["sg_head_in"] else first_frame
-        sub_last_frame = fields["sg_tail_out"] if fields["sg_tail_out"] else last_frame
+        # TODO: move this logic to publisher?
+        mov_first_frame, mov_last_frame = self._get_mov_frame_range(first_frame, last_frame, fields)
 
         progress_cb(50, "Creating Shotgun Version and uploading movie")
         submitter = tk_multi_reviewsubmission.Submitter()
@@ -169,8 +169,8 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
                                               sg_task, 
                                               comment, 
                                               store_on_disk,
-                                              sub_first_frame,
-                                              sub_last_frame,
+                                              mov_first_frame,
+                                              mov_last_frame,
                                               upload_to_shotgun,
                                               version_name)
             
@@ -187,3 +187,21 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
             pass
 
         return sg_version
+
+    def _get_mov_frame_range(self, first_frame, last_frame, fields):
+        head_in = fields.get("sg_head_in")
+        tail_out = fields.get("sg_tail_out")
+
+        # set head_in, tail_out only if it exceeds the first_frame, last_frame range
+        # needed if work range is greater and will be retimed
+        if head_in and head_in < first_frame:
+            mov_first_frame = fields["sg_head_in"]
+        else:
+            mov_first_frame = first_frame
+
+        if tail_out and tail_out > last_frame:
+            mov_last_frame = fields["sg_tail_out"]
+        else:
+            mov_last_frame = last_frame
+
+        return mov_first_frame, mov_last_frame
