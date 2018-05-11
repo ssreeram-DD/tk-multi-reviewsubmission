@@ -135,6 +135,8 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
         if version_template:
             version_name = version_template.apply_fields(fields)
 
+        fields["description"] = comment
+
         # Render and Submit
         progress_cb(20, "Rendering movie")
         renderer = tk_multi_reviewsubmission.Renderer()
@@ -144,7 +146,7 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
                                       first_frame, last_frame,
                                       fields.get("version", 0), 
                                       fields.get("name", "Unnamed"),
-                                      color_space)
+                                      color_space, fields)
 
         progress_cb(50, "Creating Shotgun Version and uploading movie")
         submitter = tk_multi_reviewsubmission.Submitter()
@@ -155,7 +157,7 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
                                               sg_task, 
                                               comment, 
                                               store_on_disk,
-                                              first_frame, 
+                                              first_frame,
                                               last_frame,
                                               upload_to_shotgun,
                                               version_name)

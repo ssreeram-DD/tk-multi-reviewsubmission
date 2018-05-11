@@ -10,10 +10,16 @@
 
 import sgtk
 import os
+import copy
+from datetime import datetime
+import hashlib
 import pickle
+import re
 import sys
 import subprocess
+import time
 from sgtk.platform.qt import QtCore
+
 
 try:
     import nuke
@@ -28,17 +34,19 @@ class Renderer(object):
         """
         self.__app = sgtk.platform.current_bundle()
         self._font = os.path.join(self.__app.disk_location, "resources", "liberationsans_regular.ttf")
-        context_fields = self.__app.context.as_template_fields()
+        self._context_fields = self.__app.context.as_template_fields()
 
+        self._burnin_nk = ''
         burnin_template = self.__app.get_template("burnin_path")
-        self._burnin_nk = burnin_template.apply_fields(context_fields)
+        if burnin_template:
+            self._burnin_nk = burnin_template.apply_fields(self._context_fields)
         # If a show specific burnin file has not been defined, take it from the default location
         if not os.path.isfile(self._burnin_nk):
             self._burnin_nk = os.path.join(self.__app.disk_location, "resources", "burnin.nk")
 
         self._logo = None
         logo_template = self.__app.get_template("slate_logo")
-        logo_file_path = logo_template.apply_fields(context_fields)
+        logo_file_path = logo_template.apply_fields(self._context_fields)
         if os.path.isfile(logo_file_path):
             self._logo = logo_file_path
         else:
@@ -54,7 +62,7 @@ class Renderer(object):
                                 width, height,
                                 first_frame, last_frame,
                                 version, name,
-                                color_space):
+                                color_space, burnin_nk):
         # First get Nuke executable path from project configuration environment
         setting_key_by_os = {'win32': 'nuke_windows_path',
                              'linux2': 'nuke_linux_path',
@@ -65,8 +73,17 @@ class Renderer(object):
         writenode_quicktime_settings = self.__app.execute_hook_method("codec_settings_hook",
                                                                       "get_quicktime_settings")
 
-        render_script_path = os.path.join(self.__app.disk_location, "hooks",
-                                          "nuke_batch_render_movie.py")
+        # making the python script passed to nuke configurable as a setting because
+        # making it a hook would still not allow us to subprocess it out
+        render_script_path = ''
+        render_script_template = self.__app.get_template("render_script")
+        if render_script_template:
+            render_script_path = render_script_template.apply_fields(self._context_fields)
+
+        # If a show specific render script has not been defined, take it from the default location
+        if not os.path.isfile(render_script_path):
+            render_script_path = os.path.join(self.__app.disk_location, "hooks",
+                                              "nuke_batch_render_movie.py")
 
         serialized_context = self.__app.context.serialize()
 
@@ -76,7 +93,7 @@ class Renderer(object):
         }
 
         render_info = {
-            'burnin_nk': self._burnin_nk,
+            'burnin_nk': burnin_nk,
             'slate_font': self._font,
             'codec_settings': {'quicktime': writenode_quicktime_settings},
         }
@@ -108,10 +125,39 @@ class Renderer(object):
                              first_frame, last_frame,
                              version, name,
                              color_space,
+                             fields=None,
                              active_progress_info=None):
+        """
+        Renders the movie using a Nuke subprocess,
+        along with slate/burnins using all the app settings.
+
+        :param path:            The path where frames should be found.
+        :param output_path:     The path where the movie should be written to
+        :param width:           Movie width
+        :param height:          Movie height
+        :param first_frame:     The first frame of the sequence of frames
+        :param last_frame:      The last frame of the sequence of frames
+        :param version:         Version currently being published
+        :param name:            Name of the file being published
+        :param color_space:     Colorspace used to create the frames
+        :param fields:          Any additional information to be used in slate/burnins
+        :param active_progress_info: Any function that receives the progress percentage
+                                     Can be used to update GUI
+        """
+        # add to information passed for preprocessing
+        fields["first_frame"] = first_frame
+        fields["last_frame"] = last_frame
+        fields["path"] = path
+
+        # preprocess self._burnin_nk to replace tokens
+        processed_nuke_script_path = self.__app.execute_hook_method("preprocess_nuke_hook",
+                                                                    "get_processed_script",
+                                                                    nuke_script_path=self._burnin_nk,
+                                                                    fields=fields)
 
         render_info = self.gather_nuke_render_info(path, output_path, width, height, first_frame,
-                                                   last_frame, version, name, color_space)
+                                                   last_frame, version, name, color_space,
+                                                   processed_nuke_script_path)
         run_in_batch_mode = True if nuke is None else False
 
         event_loop = QtCore.QEventLoop()
@@ -123,9 +169,7 @@ class Renderer(object):
         # log any errors generated in the thread
         thread_error_msg = thread.get_errors()
         if thread_error_msg:
-            self.__app.log_error("OUTPUT:\n" + thread.get_output())
             self.__app.log_error("ERROR:\n" + thread_error_msg)
-
             # Do not clutter user message with any warnings etc from Nuke. Print only traceback.
             # TODO: is there a better way?
             try:
@@ -142,13 +186,9 @@ class ShooterThread(QtCore.QThread):
         self.batch_mode = batch_mode
         self.active_progress_info = active_progress_info
         self.subproc_error_msg = ''
-        self.subproc_output = ''
 
     def get_errors(self):
         return self.subproc_error_msg
-
-    def get_output(self):
-        return self.subproc_output
 
     def run(self):
         if self.batch_mode:
@@ -172,40 +212,16 @@ class ShooterThread(QtCore.QThread):
             '--render_info', pickle.dumps(self.render_info['render_info']),
         ]
 
-        p = subprocess.Popen(cmd_and_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        env = copy.deepcopy(os.environ)
+        env["TANK_CONTEXT"] = self.render_info['serialized_context']
+        p = subprocess.Popen(cmd_and_args, stderr=subprocess.PIPE, env=env, bufsize=1)
 
-        output_name = os.path.basename(self.render_info['movie_output_path'])
-        # TODO: How is this supposed to work?
-        progress_fn = progress_label = None
-        if self.active_progress_info:
-            progress_fn = self.active_progress_info.get('show_progress_fn')
-            progress_label = self.active_progress_info.get('label')
-
-        output_lines = []
         error_lines = []
 
-        num_frames = self.render_info['last_frame'] - self.render_info['first_frame'] + 1
-        write_count = 0
-
         while p.poll() is None:
-            stdout_line = p.stdout.readline()
             stderr_line = p.stderr.readline()
-
-            if stdout_line != '':
-                output_lines.append(stdout_line.rstrip())
             if stderr_line != '':
                 error_lines.append(stderr_line.rstrip())
 
-            percent_complete = float(write_count) / float(num_frames) * 100.0
-            if progress_fn:
-                progress_fn(progress_label,
-                            'Nuke: {0:03.1f}%, {1}'.format(percent_complete, output_name))
-                # TODO: emit a signal to be captured by calling thread to update UI?
-
-            if stdout_line.startswith('Writing '):
-                # The number of these lines will be number of frames + 1
-                write_count += 1
-
-        self.subproc_output = '\n'.join(output_lines)
         if p.returncode != 0:
             self.subproc_error_msg = '\n'.join(error_lines)
