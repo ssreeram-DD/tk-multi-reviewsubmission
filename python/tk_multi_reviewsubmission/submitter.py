@@ -14,21 +14,21 @@ import sgtk
 import os
 from sgtk.platform.qt import QtCore
 
+
 class Submitter(object):
-    
     def __init__(self):
         """
         Construction
         """
         self.__app = sgtk.platform.current_bundle()
-    
+
     def submit_version(self, path_to_frames, path_to_movie, thumbnail_path, sg_publishes,
-                        sg_task, comment, store_on_disk, first_frame, last_frame,
-                        upload_to_shotgun, version_name=None):
+                       sg_task, comment, store_on_disk, first_frame, last_frame,
+                       upload_to_shotgun, version_name=None):
         """
         Create a version in Shotgun for this path and linked to this publish.
         """
-        
+
         # get current shotgun user
         current_user = sgtk.util.get_current_user(self.__app.sgtk)
 
@@ -41,7 +41,7 @@ class Submitter(object):
             version_name = version_name.replace("_", " ")
             # and capitalize
             version_name = version_name.capitalize()
-        
+
         # Create the version in Shotgun
         ctx = self.__app.context
         data = {
@@ -49,51 +49,61 @@ class Submitter(object):
             "sg_status_list": self.__app.get_setting("new_version_status"),
             "entity": ctx.entity,
             "sg_task": sg_task,
-            # Leaving these fields blank to enable correct rv playback
-            # and match LA shotgun
-            # "sg_first_frame": first_frame,
-            # "sg_last_frame": last_frame,
-            "frame_count": (last_frame-first_frame+1),
+            "sg_first_frame": first_frame,
+            "sg_last_frame": last_frame,
+            "frame_count": (last_frame - first_frame + 1),
             "frame_range": "%s-%s" % (first_frame, last_frame),
             "sg_frames_have_slate": False,
             "created_by": current_user,
             "user": current_user,
             "description": comment,
-            "sg_path_to_frames": path_to_frames,
             "sg_movie_has_slate": self.__app.get_setting("mov_has_slate"),
             "project": ctx.project,
         }
 
         if sgtk.util.get_published_file_entity_type(self.__app.sgtk) == "PublishedFile":
             data["published_files"] = sg_publishes
-        else:# == "TankPublishedFile"
+        else:  # == "TankPublishedFile"
             if len(sg_publishes) > 0:
                 if len(sg_publishes) > 1:
-                    self.__app.log_warning("Only the first publish of %d can be registered for the new version!" % len(sg_publishes))
+                    self.__app.log_warning("Only the first publish of %d can be registered "
+                                           "for the new version!" % len(sg_publishes))
                 data["tank_published_file"] = sg_publishes[0]
+
+        # use published file path as path to frames instead of input frames
+        # to enable RV 'Switch to Frames' to go to that instead
+        if len(sg_publishes) > 0:
+            if len(sg_publishes) > 1:
+                self.__app.log_warning(
+                    "Only the first publish of %d can be set as path to frames "
+                    "for the new version!" % len(sg_publishes))
+            data["sg_path_to_frames"] = sg_publishes[0]["path"]["local_path"]
+        else:
+            data["sg_path_to_frames"] = path_to_frames
 
         if store_on_disk:
             data["sg_path_to_movie"] = path_to_movie
 
         sg_version = self.__app.sgtk.shotgun.create("Version", data)
         self.__app.log_debug("Created version in shotgun: %s" % str(data))
-        
+
         # upload files:
         self._upload_files(sg_version, path_to_movie, thumbnail_path, upload_to_shotgun)
-        
+
         return sg_version
-    
+
     def _upload_files(self, sg_version, output_path, thumbnail_path, upload_to_shotgun):
         """
         """
         # Upload in a new thread and make our own event loop to wait for the
         # thread to finish.
         event_loop = QtCore.QEventLoop()
-        thread = UploaderThread(self.__app, sg_version, output_path, thumbnail_path, upload_to_shotgun)
+        thread = UploaderThread(self.__app, sg_version, output_path, thumbnail_path,
+                                upload_to_shotgun)
         thread.finished.connect(event_loop.quit)
         thread.start()
         event_loop.exec_()
-        
+
         # log any errors generated in the thread
         thread_errors = thread.get_errors()
         if thread_errors:
@@ -101,8 +111,7 @@ class Submitter(object):
                 self.__app.log_error(e)
             # make sure we don't display a success message. TODO: Custom exception?
             raise Exception('\n'.join(thread_errors))
-        
-    
+
 
 class UploaderThread(QtCore.QThread):
     """
@@ -110,6 +119,7 @@ class UploaderThread(QtCore.QThread):
     Broken out of the main loop so that the UI can remain responsive
     even though an upload is happening
     """
+
     def __init__(self, app, version, path_to_movie, thumbnail_path, upload_to_shotgun):
         QtCore.QThread.__init__(self)
         self._app = app
@@ -133,13 +143,15 @@ class UploaderThread(QtCore.QThread):
 
         if self._upload_to_shotgun:
             try:
-                self._app.sgtk.shotgun.upload("Version", self._version["id"], self._path_to_movie, "sg_uploaded_movie")
+                self._app.sgtk.shotgun.upload("Version", self._version["id"], self._path_to_movie,
+                                              "sg_uploaded_movie")
             except Exception, e:
                 self._errors.append("Movie upload to Shotgun failed: %s" % e)
                 upload_error = True
 
         if not self._upload_to_shotgun or upload_error:
             try:
-                self._app.sgtk.shotgun.upload_thumbnail("Version", self._version["id"], self._thumbnail_path)
+                self._app.sgtk.shotgun.upload_thumbnail("Version", self._version["id"],
+                                                        self._thumbnail_path)
             except Exception, e:
                 self._errors.append("Thumbnail upload to Shotgun failed: %s" % e)
