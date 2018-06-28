@@ -41,6 +41,17 @@ configuration:
                      as a temporary location for processing before the file is
                      uploaded to Shotgun.
 
+    extra_write_nodes_path_info:
+        type: dict
+        description: Dictionary containing a mapping of Write node names
+                     to their corresponding output paths in the form of templates.
+        allows_empty: True
+        values:
+          type: template
+          fields: context, version, [output], [name], *
+          description: Output path of the Write nodes
+          allows_empty: False
+
     movie_width:
         type: int
         default_value: 1024
