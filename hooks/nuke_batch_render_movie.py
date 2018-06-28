@@ -5,6 +5,7 @@ import traceback
 import getopt
 
 from sgtk.context import Context
+from sgtk.util.filesystem import ensure_folder_exists
 
 import nuke
 
@@ -58,7 +59,7 @@ def __create_output_node(path, codec_settings, logger=None):
     return node
 
 
-def render_movie_in_nuke(path, output_path,
+def render_movie_in_nuke(path, output_path, extra_write_node_mapping,
                          width, height,
                          first_frame, last_frame,
                          version, name,
@@ -170,22 +171,28 @@ def render_movie_in_nuke(path, output_path,
         # Create the output node
         output_node = __create_output_node(output_path, render_info.get('codec_settings', {}))
         output_node.setInput(0, scale)
-    finally:
-        group.end()
+    except:
+        return {'status': 'ERROR', 'error_msg': '{0}'.format(traceback.format_exc()),
+                'output_path': output_path}
+
+    group.end()
 
     if output_node:
-        # Make sure the output folder exists
-        output_folder = os.path.dirname(output_path)
-        # TODO: jsmk stuff?
-        if not os.path.isdir(output_folder):
-            os.makedirs(output_folder)
+        try:
+            # Make sure the output folder exists
+            output_folder = os.path.dirname(output_path)
+            ensure_folder_exists(output_folder)
 
-        # Render the outputs, first view only
-        nuke.executeMultiple([output_node], ([first_frame-1, last_frame, 1],),
-                             [nuke.views()[0]])
+            # Render the outputs, first view only
+            nuke.executeMultiple([output_node], ([first_frame - 1, last_frame, 1],), [nuke.views()[0]])
+        except:
+            return {'status': 'ERROR', 'error_msg': '{0}'.format(traceback.format_exc()),
+                    'output_path': output_path}
 
     # Cleanup after ourselves
     nuke.delete(group)
+
+    return {'status': 'OK'}
 
 
 def get_usage():
@@ -194,6 +201,7 @@ def get_usage():
          -h | --help ... print this usage message and exit.
          --path <FRAME_PATH> ... specify full path to frames, with frame spec ... e.g. ".%04d.exr"
          --output_path <OUTPUT_MOVIE_PATH> ... specify full path to output movie
+         --extra_write_node_mapping <EXTRA_WRITE_NODE_MAPPING> ... mapping of extra write nodes to their output paths
          --width <WIDTH> ... specify width for output movie
          --height <HEIGHT> ... specify height for output movie
          --first_frame <FIRST_FRAME> ... specify first frame number of the input frames
@@ -210,7 +218,7 @@ def get_usage():
 if __name__ == '__main__':
     # TODO: copied maquino's code. Refactor?
     data_keys = [
-        'path', 'output_path', 'width', 'height', 'first_frame', 'last_frame',
+        'path', 'output_path', 'extra_write_node_mapping', 'width', 'height', 'first_frame', 'last_frame',
         'version', 'name', 'color_space', 'app_settings', 'shotgun_context', 'render_info',
     ]
 
@@ -244,12 +252,24 @@ if __name__ == '__main__':
 
     # Hack to ensure all output/error from this process can be captured when called as subprocess
     print ''
-    render_movie_in_nuke(input_data['path'], input_data['output_path'],
-                         input_data['width'], input_data['height'],
-                         input_data['first_frame'], input_data['last_frame'],
-                         input_data['version'], input_data['name'],
-                         input_data['color_space'],
-                         input_data['app_settings'],
-                         input_data['shotgun_context'],
-                         input_data['render_info'],
-                         is_subprocess=True)
+    ret_status = render_movie_in_nuke(input_data['path'], input_data['output_path'],
+                                      input_data['extra_write_node_mapping'],
+                                      input_data['width'], input_data['height'],
+                                      input_data['first_frame'], input_data['last_frame'],
+                                      input_data['version'], input_data['name'],
+                                      input_data['color_space'],
+                                      input_data['app_settings'],
+                                      input_data['shotgun_context'],
+                                      input_data['render_info'],
+                                      is_subprocess=True)
+
+    sys.stderr.write('')
+    sys.stderr.write('[RETURN_STATUS_DATA]{0}[RETURN_STATUS_DATA]'.format(ret_status))
+    sys.stderr.write('')
+    sys.stderr.write('[PROCESSED_PATHS]{0}[PROCESSED_PATHS]'.format(input_data['output_path']))
+    sys.stderr.write('')
+
+    if ret_status.get('status', '') == 'OK':
+        sys.exit(0)
+    else:
+        sys.exit(3)
