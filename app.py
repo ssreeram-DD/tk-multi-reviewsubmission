@@ -229,8 +229,21 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
         processed_paths = self.render_and_return_paths(path, fields, first_frame, last_frame, sg_publishes, sg_task,
                                                        comment, thumbnail_path, progress_cb, color_space, *args, **kwargs)
 
-        assert len(processed_paths) == 1, "Can't create versions for more than one files!"
-        output_path = processed_paths[0]
+        # Make sure we don't overwrite the caller's fields
+        fields = copy.copy(fields)
+
+        # Movie output width and height
+        width = self.get_setting("movie_width")
+        height = self.get_setting("movie_height")
+        fields["width"] = width
+        fields["height"] = height
+
+        # Get an output path for the movie.
+        output_path_template = self.get_template("movie_path_template")
+        output_path = output_path_template.apply_fields(fields)
+
+        if output_path not in processed_paths:
+            raise Exception("tk-multi-reviewsubmission not configured to render movie!")
 
         # Submit Version
         progress_cb(50, "Creating Shotgun Version and uploading movie")
