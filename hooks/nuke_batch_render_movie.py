@@ -59,27 +59,30 @@ def __create_output_node(path, codec_settings, logger=None):
     return node
 
 
-def render_movie_in_nuke(path, output_path, extra_write_node_mapping,
-                         width, height,
-                         first_frame, last_frame,
-                         version, name,
-                         color_space,
-                         app_settings,
-                         ctx, render_info,
-                         is_subprocess=False):
+def render_in_nuke(path_to_frames, path_to_movie, extra_write_node_mapping, width, height, first_frame, last_frame,
+                   version, name, color_space, app_settings, ctx, render_info, is_subprocess=False):
     """
     Use Nuke to render a movie. This assumes we're running _inside_ Nuke.
 
-    :param path:        Path to the input frames for the movie
-    :param output_path: Path to the output movie that will be rendered
-    :param width:       Width of the output movie
-    :param height:      Height of the output movie
-    :param first_frame: Start frame for the output movie
-    :param last_frame:  End frame for the output movie
-    :param version:     Version number to use for the output movie slate and burn-in
-    :param name:        Name to use in the slate for the output movie
-    :param color_space: Colorspace of the input frames
+    :param path_to_frames: Path to the input frames for the movie
+    :param path_to_movie:  Path to the output movie that will be rendered
+    :param extra_write_node_mapping: Mapping of write nodes with their output paths that should be rendered,
+        other than the movie write node
+    :param width:          Width of the output movie
+    :param height:         Height of the output movie
+    :param first_frame:    Start frame for the output movie
+    :param last_frame:     End frame for the output movie
+    :param version:        Version number to use for the output movie slate and burn-in
+    :param name:           Name to use in the slate for the output movie
+    :param color_space:    Colorspace of the input frames
+    :param app_settings:   Settings of the app like slate_logo, version padding etc.
+    :param ctx:            context object for which the render is supposed to run
+    :param render_info:    Burnin nuke file to be used as template, codec settings for the movie.
+    :param is_subprocess:  If it's subprocess or not
+
+    :return:               Status of the nuke script execution
     """
+
     output_node = None
     root_node = nuke.root()
 
@@ -96,7 +99,7 @@ def render_movie_in_nuke(path, output_path, extra_write_node_mapping,
 
     try:
         # create read node
-        read = nuke.nodes.Read(name="source", file=path.replace(os.sep, "/"))
+        read = nuke.nodes.Read(name="source", file=path_to_frames.replace(os.sep, "/"))
         read["on_error"].setValue("black")
         read["first"].setValue(first_frame)
         read["last"].setValue(last_frame)
@@ -169,25 +172,25 @@ def render_movie_in_nuke(path, output_path, extra_write_node_mapping,
         scale.setInput(0, burn)
 
         # Create the output node
-        output_node = __create_output_node(output_path, render_info.get('codec_settings', {}))
+        output_node = __create_output_node(path_to_movie, render_info.get('codec_settings', {}))
         output_node.setInput(0, scale)
     except:
         return {'status': 'ERROR', 'error_msg': '{0}'.format(traceback.format_exc()),
-                'output_path': output_path}
+                'output_path': path_to_movie}
 
     group.end()
 
     if output_node:
         try:
             # Make sure the output folder exists
-            output_folder = os.path.dirname(output_path)
+            output_folder = os.path.dirname(path_to_movie)
             ensure_folder_exists(output_folder)
 
             # Render the outputs, first view only
             nuke.executeMultiple([output_node], ([first_frame - 1, last_frame, 1],), [nuke.views()[0]])
         except:
             return {'status': 'ERROR', 'error_msg': '{0}'.format(traceback.format_exc()),
-                    'output_path': output_path}
+                    'output_path': path_to_movie}
 
     # Cleanup after ourselves
     nuke.delete(group)
@@ -199,8 +202,8 @@ def get_usage():
     return '''
   Usage: python {0} [ OPTIONS ]
          -h | --help ... print this usage message and exit.
-         --path <FRAME_PATH> ... specify full path to frames, with frame spec ... e.g. ".%04d.exr"
-         --output_path <OUTPUT_MOVIE_PATH> ... specify full path to output movie
+         --path_to_frames <FRAME_PATH> ... specify full path to frames, with frame spec ... e.g. ".%04d.exr"
+         --path_to_movie <OUTPUT_MOVIE_PATH> ... specify full path to output movie
          --extra_write_node_mapping <EXTRA_WRITE_NODE_MAPPING> ... mapping of extra write nodes to their output paths
          --width <WIDTH> ... specify width for output movie
          --height <HEIGHT> ... specify height for output movie
@@ -218,7 +221,7 @@ def get_usage():
 if __name__ == '__main__':
     # TODO: copied maquino's code. Refactor?
     data_keys = [
-        'path', 'output_path', 'extra_write_node_mapping', 'width', 'height', 'first_frame', 'last_frame',
+        'path_to_frames', 'path_to_movie', 'extra_write_node_mapping', 'width', 'height', 'first_frame', 'last_frame',
         'version', 'name', 'color_space', 'app_settings', 'shotgun_context', 'render_info',
     ]
 
@@ -252,16 +255,11 @@ if __name__ == '__main__':
 
     # Hack to ensure all output/error from this process can be captured when called as subprocess
     print ''
-    ret_status = render_movie_in_nuke(input_data['path'], input_data['output_path'],
-                                      input_data['extra_write_node_mapping'],
-                                      input_data['width'], input_data['height'],
-                                      input_data['first_frame'], input_data['last_frame'],
-                                      input_data['version'], input_data['name'],
-                                      input_data['color_space'],
-                                      input_data['app_settings'],
-                                      input_data['shotgun_context'],
-                                      input_data['render_info'],
-                                      is_subprocess=True)
+    ret_status = render_in_nuke(input_data['path_to_frames'], input_data['path_to_movie'],
+                                input_data['extra_write_node_mapping'], input_data['width'], input_data['height'],
+                                input_data['first_frame'], input_data['last_frame'], input_data['version'],
+                                input_data['name'], input_data['color_space'], input_data['app_settings'],
+                                input_data['shotgun_context'], input_data['render_info'], is_subprocess=True)
 
     sys.stderr.write('')
     sys.stderr.write('[RETURN_STATUS_DATA]{0}[RETURN_STATUS_DATA]'.format(ret_status))

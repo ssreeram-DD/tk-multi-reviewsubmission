@@ -58,8 +58,26 @@ class Renderer(object):
             self._logo = self._logo.replace(os.sep, "/")
             self._burnin_nk = self._burnin_nk.replace(os.sep, "/")
 
-    def gather_nuke_render_info(self, path, output_path, extra_write_node_mapping, width, height, first_frame,
-                                last_frame, version, name, color_space, burnin_nk):
+    def gather_nuke_render_info(self, path_to_frames, path_to_movie, extra_write_node_mapping, width, height,
+                                first_frame, last_frame, version, name, color_space, burnin_nk):
+        """
+        Prepares the render settings for the nuke subprocess hook
+
+        :param path_to_frames:  The path where frames should be found.
+        :param path_to_movie:   The path where the movie should be written to
+        :param extra_write_node_mapping: Mapping of write nodes with their output paths that should be rendered,
+        other than the movie write node
+        :param width:       Movie width
+        :param height:      Movie height
+        :param first_frame: The first frame of the sequence of frames
+        :param last_frame:  The last frame of the sequence of frames
+        :param version:     Version currently being published
+        :param name:        Name of the file being published
+        :param color_space: Colorspace used to create the frames
+        :param burnin_nk:   Path to the nuke file to be used for processing
+
+        :return:            Dictionary of settings to be used by the subprocess.
+        """
         # First get Nuke executable path from project configuration environment
         setting_key_by_os = {'win32': 'nuke_windows_path',
                              'linux2': 'nuke_linux_path',
@@ -96,8 +114,8 @@ class Renderer(object):
         }
 
         # set needed paths and force them to use forward slashes for use in Nuke (for Windows)
-        src_frames_path = path.replace('\\', '/')
-        movie_output_path = output_path.replace('\\', '/')
+        src_frames_path = path_to_frames.replace('\\', '/')
+        movie_output_path = path_to_movie.replace('\\', '/')
 
         nuke_render_info = {
             'width': width,
@@ -118,15 +136,16 @@ class Renderer(object):
         }
         return nuke_render_info
 
-    def render_movie_in_nuke(self, path, output_path, extra_write_node_mapping, width, height, first_frame, last_frame,
-                             version, name, color_space, fields=None, active_progress_info=None):
+    def render_in_nuke(self, path_to_frames, path_to_movie, extra_write_node_mapping, width, height, first_frame,
+                       last_frame, version, name, color_space, fields=None, active_progress_info=None):
         """
         Renders the movie using a Nuke subprocess,
         along with slate/burnins using all the app settings.
 
-        :param path:            The path where frames should be found.
-        :param output_path:     The path where the movie should be written to
-        :param extra_write_node_mapping: Mapping of write nodes other than the movie write node with their output paths
+        :param path_to_frames:  The path where frames should be found.
+        :param path_to_movie:   The path where the movie should be written to
+        :param extra_write_node_mapping: Mapping of write nodes with their output paths that should be rendered,
+        other than the movie write node
         :param width:           Movie width
         :param height:          Movie height
         :param first_frame:     The first frame of the sequence of frames
@@ -141,7 +160,7 @@ class Renderer(object):
         # add to information passed for preprocessing
         fields["first_frame"] = first_frame
         fields["last_frame"] = last_frame
-        fields["path"] = path
+        fields["path"] = path_to_frames
 
         # preprocess self._burnin_nk to replace tokens
         processed_nuke_script_path = self.__app.execute_hook_method("preprocess_nuke_hook",
@@ -149,8 +168,8 @@ class Renderer(object):
                                                                     nuke_script_path=self._burnin_nk,
                                                                     fields=fields)
 
-        render_info = self.gather_nuke_render_info(path, output_path, extra_write_node_mapping, width, height,
-                                                   first_frame, last_frame, version, name, color_space,
+        render_info = self.gather_nuke_render_info(path_to_frames, path_to_movie, extra_write_node_mapping, width,
+                                                   height, first_frame, last_frame, version, name, color_space,
                                                    processed_nuke_script_path)
         run_in_batch_mode = True if nuke is None else False
 
@@ -181,8 +200,8 @@ class Renderer(object):
             # in the render hook we expect the thread to return us ':' separated paths
             # return a list of paths
             processed_paths_list = processed_paths.split(":")
-            for path in processed_paths_list:
-                active_progress_info(msg="Created %s" % path, stage={"item": {"name": "Render"},
+            for path_to_frames in processed_paths_list:
+                active_progress_info(msg="Created %s" % path_to_frames, stage={"item": {"name": "Render"},
                                                                      "output": {"name": "Nuke"}})
             return processed_paths_list
 
@@ -210,8 +229,8 @@ class ShooterThread(QtCore.QThread):
 
         cmd_and_args = [
             self.render_info['nuke_exe_path'], nuke_flag, self.render_info['render_script_path'],
-            '--path', pickle.dumps(self.render_info['src_frames_path']),
-            '--output_path', pickle.dumps(self.render_info['movie_output_path']),
+            '--path_to_frames', pickle.dumps(self.render_info['src_frames_path']),
+            '--path_to_movie', pickle.dumps(self.render_info['movie_output_path']),
             '--extra_write_node_mapping', pickle.dumps(self.render_info['extra_write_node_mapping']),
             '--width', pickle.dumps(self.render_info['width']),
             '--height', pickle.dumps(self.render_info['height']),

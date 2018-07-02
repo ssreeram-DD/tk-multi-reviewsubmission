@@ -38,7 +38,7 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
         """
         return True
 
-    def get_resolved_write_nodes(self, fields):
+    def resolve_extra_write_nodes(self, fields):
         """
         Returns the resolved paths of the write nodes that the app should run/use from the nuke file.
         """
@@ -68,14 +68,47 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
         
         # call new version
         return self.render_and_submit_version(template, fields, first_frame, last_frame, sg_publishes, sg_task,
-                                  comment, thumbnail_path, progress_cb)
+                                              comment, thumbnail_path, progress_cb)
 
-    def render_and_return_paths(self, path, fields, first_frame, last_frame, sg_publishes, sg_task,
-                                comment, thumbnail_path, progress_cb, color_space=None, *args, **kwargs):
+    def render_and_submit_version(self, template, fields, first_frame, last_frame, sg_publishes, sg_task,
+                                  comment, thumbnail_path, progress_cb, color_space=None, *args, **kwargs):
+        """
+        Main application entry point to be called by other applications / hooks.
+
+        :param template:        The template defining the path where frames should be found.
+        :param fields:          Dictionary of fields to be used to fill out the template with.
+        :param first_frame:     The first frame of the sequence of frames.
+        :param last_frame:      The last frame of the sequence of frames.
+        :param sg_publishes:    A list of shotgun published file objects to link the publish against.
+        :param sg_task:         A Shotgun task object to link against. Can be None.
+        :param comment:         A description to add to the Version in Shotgun.
+        :param thumbnail_path:  The path to a thumbnail to use for the version when the movie isn't
+                                being uploaded to Shotgun (this is set in the config)
+        :param progress_cb:     A callback to report progress with.
+        :param color_space:     The colorspace of the rendered frames
+
+        :returns:               The Version Shotgun entity dictionary that was created.
+        """
+        # Make sure we don't overwrite the caller's fields
+        fields = copy.copy(fields)
+
+        # Tweak fields so that we'll be getting nuke formatted sequence markers (%03d, %04d etc):
+        for key_name in [key.name for key in template.keys.values() if isinstance(key, sgtk.templatekey.SequenceKey)]:
+            fields[key_name] = "FORMAT: %d"
+
+        # Get our input path for frames to convert to movie
+        path_to_frames = template.apply_fields(fields)
+
+        # call new version
+        return self.render_and_submit_path(path_to_frames, fields, first_frame, last_frame, sg_publishes, sg_task,
+                                           comment, thumbnail_path, progress_cb, color_space, *args, **kwargs)
+
+    def render(self, path_to_frames, fields, first_frame, last_frame, sg_publishes, sg_task,
+               comment, thumbnail_path, progress_cb, color_space=None, *args, **kwargs):
         """
         Render and return the paths that are processed by the nuke hook.
 
-        :param path:            The path where frames should be found.
+        :param path_to_frames:  The path where frames should be found.
         :param fields:          Dictionary of fields to be used to fill out the template with.
         :param first_frame:     The first frame of the sequence of frames.
         :param last_frame:      The last frame of the sequence of frames.
@@ -94,7 +127,7 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
 
         progress_cb(10, "Preparing...")
 
-        extra_write_node_mapping = self.get_resolved_write_nodes(fields)
+        extra_write_node_mapping = self.resolve_extra_write_nodes(fields)
 
         # Make sure we don't overwrite the caller's fields
         fields = copy.copy(fields)
@@ -113,19 +146,19 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
 
         # Render and Submit
         renderer = tk_multi_reviewsubmission.Renderer()
-        processed_paths = renderer.render_movie_in_nuke(path, output_path, extra_write_node_mapping, width, height,
-                                                        first_frame, last_frame, fields.get("version", 0),
-                                                        fields.get("name", "Unnamed"), color_space, fields, progress_cb)
+        processed_paths = renderer.render_in_nuke(path_to_frames, output_path, extra_write_node_mapping, width, height,
+                                                  first_frame, last_frame, fields.get("version", 0),
+                                                  fields.get("name", "Unnamed"), color_space, fields, progress_cb)
 
         return processed_paths
 
-    def submit_version(self, path, path_to_upload, fields, first_frame, last_frame, sg_publishes, sg_task,
+    def submit_version(self, path_to_frames, path_to_movie, fields, first_frame, last_frame, sg_publishes, sg_task,
                        comment, thumbnail_path, progress_cb, color_space=None, *args, **kwargs):
         """
         Create a version entity for the given path.
 
-        :param path:            The path where frames should be found.
-        :param path_to_upload:  The path to create the version entity for.
+        :param path_to_frames:  The path where frames should be found.
+        :param path_to_movie:   The path to create the version entity for.
         :param fields:          Dictionary of fields to be used to fill out the template with.
         :param first_frame:     The first frame of the sequence of frames.
         :param last_frame:      The last frame of the sequence of frames.
@@ -161,22 +194,14 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
         # Submit Version
         progress_cb(50, "Creating Shotgun Version and uploading movie")
         submitter = tk_multi_reviewsubmission.Submitter()
-        sg_version = submitter.submit_version(path,
-                                              path_to_upload,
-                                              thumbnail_path,
-                                              sg_publishes,
-                                              sg_task,
-                                              comment,
-                                              store_on_disk,
-                                              first_frame,
-                                              last_frame,
-                                              upload_to_shotgun,
+        sg_version = submitter.submit_version(path_to_frames, path_to_movie, thumbnail_path, sg_publishes, sg_task,
+                                              comment, store_on_disk, first_frame, last_frame, upload_to_shotgun,
                                               version_name)
 
         # Remove from filesystem if required
-        if not store_on_disk and os.path.exists(path_to_upload):
+        if not store_on_disk and os.path.exists(path_to_movie):
             progress_cb(90, "Deleting rendered movie")
-            os.unlink(path_to_upload)
+            os.unlink(path_to_movie)
 
         # log metrics for this app's usage
         try:
@@ -187,12 +212,12 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
 
         return sg_version
 
-    def render_and_submit_version(self, path, fields, first_frame, last_frame, sg_publishes, sg_task,
-                                  comment, thumbnail_path, progress_cb, color_space=None, *args, **kwargs):
+    def render_and_submit_path(self, path_to_frames, fields, first_frame, last_frame, sg_publishes, sg_task, comment,
+                               thumbnail_path, progress_cb, color_space=None, *args, **kwargs):
         """
         Main application entry point to be called by other applications / hooks.
 
-        :param path:            The path where frames should be found.
+        :param path_to_frames:            The path where frames should be found.
         :param fields:          Dictionary of fields to be used to fill out the template with.
         :param first_frame:     The first frame of the sequence of frames.
         :param last_frame:      The last frame of the sequence of frames.
@@ -226,8 +251,8 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
 
         # get processed path
         progress_cb(20, "Rendering Movie...")
-        processed_paths = self.render_and_return_paths(path, fields, first_frame, last_frame, sg_publishes, sg_task,
-                                                       comment, thumbnail_path, progress_cb, color_space, *args, **kwargs)
+        processed_paths = self.render(path_to_frames, fields, first_frame, last_frame, sg_publishes, sg_task,
+                                      comment, thumbnail_path, progress_cb, color_space, *args, **kwargs)
 
         # Make sure we don't overwrite the caller's fields
         fields = copy.copy(fields)
@@ -248,17 +273,9 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
         # Submit Version
         progress_cb(50, "Creating Shotgun Version and uploading movie")
         submitter = tk_multi_reviewsubmission.Submitter()
-        sg_version = submitter.submit_version(path, 
-                                              output_path,
-                                              thumbnail_path,
-                                              sg_publishes, 
-                                              sg_task, 
-                                              comment, 
-                                              store_on_disk,
-                                              first_frame,
-                                              last_frame,
-                                              upload_to_shotgun,
-                                              version_name)
+        sg_version = submitter.submit_version(path_to_frames, output_path, thumbnail_path,
+                                              sg_publishes, sg_task, comment,
+                                              store_on_disk, first_frame, last_frame, upload_to_shotgun, version_name)
             
         # Remove from filesystem if required
         if not store_on_disk and os.path.exists(output_path):
