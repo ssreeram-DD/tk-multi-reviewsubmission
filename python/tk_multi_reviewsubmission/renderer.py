@@ -189,12 +189,13 @@ class Renderer(object):
                 subproc_traceback = 'Traceback' + thread_error_msg.split('Traceback')[1]
             except IndexError:
                 subproc_traceback = thread_error_msg
-            # Make sure we don't display a success message. TODO: Custom exception?
-            raise Exception("Error in tk-multi-reviewsubmission: " + subproc_traceback)
+            # Make sure we don't display a success message.
+            raise NukeSubprocessFailed("Error in tk-multi-reviewsubmission: " + subproc_traceback)
 
         processed_paths = thread.get_processed_paths()
         if not processed_paths:
-            raise Exception("Error in tk-multi-reviewsubmission: No output paths were found after the render!")
+            raise NoProcessedPathsReturnedByNukeSubprocess("Error in tk-multi-reviewsubmission: "
+                                                           "No output paths were returned after the Nuke Render!")
 
         else:
             # in the render hook we expect the thread to return us ':' separated paths
@@ -202,8 +203,16 @@ class Renderer(object):
             processed_paths_list = processed_paths.split(":")
             for path_to_frames in processed_paths_list:
                 active_progress_info(msg="Created %s" % path_to_frames, stage={"item": {"name": "Render"},
-                                                                     "output": {"name": "Nuke"}})
+                                                                               "output": {"name": "Nuke"}})
             return processed_paths_list
+
+
+class NukeSubprocessFailed(Exception):
+    pass
+
+
+class NoProcessedPathsReturnedByNukeSubprocess(Exception):
+    pass
 
 
 class ShooterThread(QtCore.QThread):

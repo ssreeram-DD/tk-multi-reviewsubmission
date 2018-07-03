@@ -70,39 +70,6 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
         return self.render_and_submit_version(template, fields, first_frame, last_frame, sg_publishes, sg_task,
                                               comment, thumbnail_path, progress_cb)
 
-    def render_and_submit_version(self, template, fields, first_frame, last_frame, sg_publishes, sg_task,
-                                  comment, thumbnail_path, progress_cb, color_space=None, *args, **kwargs):
-        """
-        Main application entry point to be called by other applications / hooks.
-
-        :param template:        The template defining the path where frames should be found.
-        :param fields:          Dictionary of fields to be used to fill out the template with.
-        :param first_frame:     The first frame of the sequence of frames.
-        :param last_frame:      The last frame of the sequence of frames.
-        :param sg_publishes:    A list of shotgun published file objects to link the publish against.
-        :param sg_task:         A Shotgun task object to link against. Can be None.
-        :param comment:         A description to add to the Version in Shotgun.
-        :param thumbnail_path:  The path to a thumbnail to use for the version when the movie isn't
-                                being uploaded to Shotgun (this is set in the config)
-        :param progress_cb:     A callback to report progress with.
-        :param color_space:     The colorspace of the rendered frames
-
-        :returns:               The Version Shotgun entity dictionary that was created.
-        """
-        # Make sure we don't overwrite the caller's fields
-        fields = copy.copy(fields)
-
-        # Tweak fields so that we'll be getting nuke formatted sequence markers (%03d, %04d etc):
-        for key_name in [key.name for key in template.keys.values() if isinstance(key, sgtk.templatekey.SequenceKey)]:
-            fields[key_name] = "FORMAT: %d"
-
-        # Get our input path for frames to convert to movie
-        path_to_frames = template.apply_fields(fields)
-
-        # call new version
-        return self.render_and_submit_path(path_to_frames, fields, first_frame, last_frame, sg_publishes, sg_task,
-                                           comment, thumbnail_path, progress_cb, color_space, *args, **kwargs)
-
     def render(self, path_to_frames, fields, first_frame, last_frame, sg_publishes, sg_task,
                comment, thumbnail_path, progress_cb, color_space=None, *args, **kwargs):
         """
@@ -217,7 +184,7 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
         """
         Main application entry point to be called by other applications / hooks.
 
-        :param path_to_frames:            The path where frames should be found.
+        :param path_to_frames:  The path where frames should be found.
         :param fields:          Dictionary of fields to be used to fill out the template with.
         :param first_frame:     The first frame of the sequence of frames.
         :param last_frame:      The last frame of the sequence of frames.
@@ -268,7 +235,9 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
         output_path = output_path_template.apply_fields(fields)
 
         if output_path not in processed_paths:
-            raise Exception("tk-multi-reviewsubmission not configured to render movie!")
+            # this case should never happen since the templates are setup by TDs
+            # But if it does, this is just a safety net.
+            raise Exception("tk-multi-reviewsubmission is not configured to render a movie! Please contact your TD.")
 
         # Submit Version
         progress_cb(50, "Creating Shotgun Version and uploading movie")
@@ -290,3 +259,36 @@ class MultiReviewSubmissionApp(sgtk.platform.Application):
             pass
 
         return sg_version
+
+    def render_and_submit_version(self, template, fields, first_frame, last_frame, sg_publishes, sg_task,
+                                  comment, thumbnail_path, progress_cb, color_space=None, *args, **kwargs):
+        """
+        Main application entry point to be called by other applications / hooks.
+
+        :param template:        The template defining the path where frames should be found.
+        :param fields:          Dictionary of fields to be used to fill out the template with.
+        :param first_frame:     The first frame of the sequence of frames.
+        :param last_frame:      The last frame of the sequence of frames.
+        :param sg_publishes:    A list of shotgun published file objects to link the publish against.
+        :param sg_task:         A Shotgun task object to link against. Can be None.
+        :param comment:         A description to add to the Version in Shotgun.
+        :param thumbnail_path:  The path to a thumbnail to use for the version when the movie isn't
+                                being uploaded to Shotgun (this is set in the config)
+        :param progress_cb:     A callback to report progress with.
+        :param color_space:     The colorspace of the rendered frames
+
+        :returns:               The Version Shotgun entity dictionary that was created.
+        """
+        # Make sure we don't overwrite the caller's fields
+        fields = copy.copy(fields)
+
+        # Tweak fields so that we'll be getting nuke formatted sequence markers (%03d, %04d etc):
+        for key_name in [key.name for key in template.keys.values() if isinstance(key, sgtk.templatekey.SequenceKey)]:
+            fields[key_name] = "FORMAT: %d"
+
+        # Get our input path for frames to convert to movie
+        path_to_frames = template.apply_fields(fields)
+
+        # call new version
+        return self.render_and_submit_path(path_to_frames, fields, first_frame, last_frame, sg_publishes, sg_task,
+                                           comment, thumbnail_path, progress_cb, color_space, *args, **kwargs)
