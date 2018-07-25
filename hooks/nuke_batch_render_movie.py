@@ -261,7 +261,7 @@ if __name__ == '__main__':
     sys.stderr.write('')
     sys.stderr.write('[RETURN_STATUS_DATA]{0}[RETURN_STATUS_DATA]'.format(ret_status))
     sys.stderr.write('')
-    sys.stderr.write('[PROCESSED_PATHS]{0}[PROCESSED_PATHS]'.format(input_data['output_path']))
+    sys.stderr.write('[PROCESSED_PATHS]{0}[PROCESSED_PATHS]'.format(input_data['path_to_movie']))
     sys.stderr.write('')
 
     if ret_status.get('status', '') == 'OK':
