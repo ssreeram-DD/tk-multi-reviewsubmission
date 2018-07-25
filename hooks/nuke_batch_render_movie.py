@@ -84,116 +84,113 @@ def render_in_nuke(path_to_frames, path_to_movie, extra_write_node_mapping, widt
     """
 
     output_node = None
-    root_node = nuke.root()
-
-    if is_subprocess:
-        # set Nuke root settings (since this is a subprocess with a fresh session)
-        root_node["first_frame"].setValue(first_frame)
-        root_node["last_frame"].setValue(last_frame)
-
-    # create group where everything happens
-    group = nuke.nodes.Group()
-
-    # now operate inside this group
-    group.begin()
-
     try:
-        # create read node
-        read = nuke.nodes.Read(name="source", file=path_to_frames.replace(os.sep, "/"))
-        read["on_error"].setValue("black")
-        read["first"].setValue(first_frame)
-        read["last"].setValue(last_frame)
-        if color_space:
-            read["colorspace"].setValue(str(color_space))
+        root_node = nuke.root()
 
         if is_subprocess:
-            # set root_format = res of read node
-            read_format = read.format()
-            read_format.add('READ_FORMAT')
-            root_node.knob('format').setValue('READ_FORMAT')
+            # set Nuke root settings (since this is a subprocess with a fresh session)
+            root_node["first_frame"].setValue(first_frame)
+            root_node["last_frame"].setValue(last_frame)
 
-        # now create the slate/burnin node
-        burn = nuke.nodePaste(render_info.get('burnin_nk'))
-        burn.setInput(0, read)
+        # create group where everything happens
+        group = nuke.nodes.Group()
 
-        font = render_info.get('slate_font')
+        # now operate inside this group
+        group.begin()
 
-        # set the fonts for all text fields
-        # TODO: find by class instead of using node names
-        burn.node("top_left_text")["font"].setValue(font)
-        burn.node("top_right_text")["font"].setValue(font)
-        burn.node("bottom_left_text")["font"].setValue(font)
-        burn.node("framecounter")["font"].setValue(font)
-        burn.node("slate_info")["font"].setValue(font)
-
-        # add the logo
-        logo = app_settings.get('slate_logo', '')
-        if not os.path.isfile(logo):
-            logo = ''
-
-        burn.node("logo")["file"].setValue(logo)
-
-        # format the burnins
-        ver_num_pad = app_settings.get('version_number_padding', 4)
-        version_padding_format = "%%0%dd" % ver_num_pad
-        version_str = version_padding_format % version
-
-        if ctx.task:
-            version_label = "%s, v%s" % (ctx.task["name"], version_str)
-        elif ctx.step:
-            version_label = "%s, v%s" % (ctx.step["name"], version_str)
-        else:
-            version_label = "v%s" % version_str
-
-        # TODO: use context names instead positional so that the nodes can be moved around
-        burn.node("top_left_text")["message"].setValue(ctx.project["name"])
-        if ctx.entity:
-            burn.node("top_right_text")["message"].setValue(ctx.entity["name"])
-        burn.node("bottom_left_text")["message"].setValue(version_label)
-
-        # and the slate
-        slate_str = "Project: %s\n" % ctx.project["name"]
-        if ctx.entity:
-            slate_str += "%s: %s\n" % (ctx.entity["type"], ctx.entity["name"])
-        slate_str += "Name: %s\n" % name.capitalize()
-        slate_str += "Version: %s\n" % version_str
-
-        if ctx.task:
-            slate_str += "Task: %s\n" % ctx.task["name"]
-        elif ctx.step:
-            slate_str += "Step: %s\n" % ctx.step["name"]
-
-        slate_str += "Frames: %s - %s\n" % (first_frame, last_frame)
-
-        burn.node("slate_info")["message"].setValue(slate_str)
-
-        # Create a scale node
-        scale = __create_scale_node(width, height)
-        scale.setInput(0, burn)
-
-        # Create the output node
-        output_node = __create_output_node(path_to_movie, render_info.get('codec_settings', {}))
-        output_node.setInput(0, scale)
-    except:
-        return {'status': 'ERROR', 'error_msg': '{0}'.format(traceback.format_exc()),
-                'output_path': path_to_movie}
-
-    group.end()
-
-    if output_node:
         try:
+            # create read node
+            read = nuke.nodes.Read(name="source", file=path_to_frames.replace(os.sep, "/"))
+            read["on_error"].setValue("black")
+            read["first"].setValue(first_frame)
+            read["last"].setValue(last_frame)
+            if color_space:
+                read["colorspace"].setValue(str(color_space))
+
+            if is_subprocess:
+                # set root_format = res of read node
+                read_format = read.format()
+                read_format.add('READ_FORMAT')
+                root_node.knob('format').setValue('READ_FORMAT')
+
+            # now create the slate/burnin node
+            burn = nuke.nodePaste(render_info.get('burnin_nk'))
+            burn.setInput(0, read)
+
+            font = render_info.get('slate_font')
+
+            # set the fonts for all text fields
+            # TODO: find by class instead of using node names
+            burn.node("top_left_text")["font"].setValue(font)
+            burn.node("top_right_text")["font"].setValue(font)
+            burn.node("bottom_left_text")["font"].setValue(font)
+            burn.node("framecounter")["font"].setValue(font)
+            burn.node("slate_info")["font"].setValue(font)
+
+            # add the logo
+            logo = app_settings.get('slate_logo', '')
+            if not os.path.isfile(logo):
+                logo = ''
+
+            burn.node("logo")["file"].setValue(logo)
+
+            # format the burnins
+            ver_num_pad = app_settings.get('version_number_padding', 4)
+            version_padding_format = "%%0%dd" % ver_num_pad
+            version_str = version_padding_format % version
+
+            if ctx.task:
+                version_label = "%s, v%s" % (ctx.task["name"], version_str)
+            elif ctx.step:
+                version_label = "%s, v%s" % (ctx.step["name"], version_str)
+            else:
+                version_label = "v%s" % version_str
+
+            # TODO: use context names instead positional so that the nodes can be moved around
+            burn.node("top_left_text")["message"].setValue(ctx.project["name"])
+            if ctx.entity:
+                burn.node("top_right_text")["message"].setValue(ctx.entity["name"])
+            burn.node("bottom_left_text")["message"].setValue(version_label)
+
+            # and the slate
+            slate_str = "Project: %s\n" % ctx.project["name"]
+            if ctx.entity:
+                slate_str += "%s: %s\n" % (ctx.entity["type"], ctx.entity["name"])
+            slate_str += "Name: %s\n" % name.capitalize()
+            slate_str += "Version: %s\n" % version_str
+
+            if ctx.task:
+                slate_str += "Task: %s\n" % ctx.task["name"]
+            elif ctx.step:
+                slate_str += "Step: %s\n" % ctx.step["name"]
+
+            slate_str += "Frames: %s - %s\n" % (first_frame, last_frame)
+
+            burn.node("slate_info")["message"].setValue(slate_str)
+
+            # Create a scale node
+            scale = __create_scale_node(width, height)
+            scale.setInput(0, burn)
+
+            # Create the output node
+            output_node = __create_output_node(path_to_movie, render_info.get('codec_settings', {}))
+            output_node.setInput(0, scale)
+        finally:
+            group.end()
+
+        if output_node:
             # Make sure the output folder exists
             output_folder = os.path.dirname(path_to_movie)
             ensure_folder_exists(output_folder)
 
             # Render the outputs, first view only
             nuke.executeMultiple([output_node], ([first_frame - 1, last_frame, 1],), [nuke.views()[0]])
-        except:
-            return {'status': 'ERROR', 'error_msg': '{0}'.format(traceback.format_exc()),
-                    'output_path': path_to_movie}
 
-    # Cleanup after ourselves
-    nuke.delete(group)
+        # Cleanup after ourselves
+        nuke.delete(group)
+    except:
+        return {'status': 'ERROR', 'error_msg': '{0}'.format(traceback.format_exc()),
+            'output_path': path_to_movie}
 
     return {'status': 'OK'}
 

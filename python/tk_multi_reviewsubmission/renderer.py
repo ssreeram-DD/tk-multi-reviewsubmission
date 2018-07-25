@@ -272,7 +272,11 @@ class ShooterThread(QtCore.QThread):
 
         if p.returncode != 0:
             output_str = '\n'.join(output_lines)
-            self.subproc_error_msg = output_str.split('[RETURN_STATUS_DATA]')[1]
+            try:
+                self.subproc_error_msg = output_str.split('[RETURN_STATUS_DATA]')[1]
+            except IndexError:
+                # if error has not been formatted by the subprocess, get all available info
+                self.subproc_error_msg = output_str
             del output_str
         else:
             # we should get the paths now!!
