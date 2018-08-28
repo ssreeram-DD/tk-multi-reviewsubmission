@@ -253,8 +253,13 @@ class ShooterThread(QtCore.QThread):
             '--render_info', pickle.dumps(self.render_info['render_info']),
         ]
 
-        env = copy.deepcopy(os.environ)
-        env["TANK_CONTEXT"] = self.render_info['serialized_context']
+        env = {"TANK_CONTEXT": self.render_info['serialized_context'],
+               "PATH": os.getenv("PATH"),
+               "PYTHONPATH": os.getenv("PYTHONPATH"),
+               "USER": os.getenv("USER"),
+               "DD_SHOW": os.getenv("DD_SHOW"),
+               "DD_ROLE": os.getenv("DD_ROLE")}
+
         p = subprocess.Popen(cmd_and_args, stderr=subprocess.PIPE, env=env, bufsize=1)
 
         output_lines = []
