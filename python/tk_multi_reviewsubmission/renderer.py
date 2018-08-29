@@ -10,14 +10,9 @@
 
 import sgtk
 import os
-import copy
-from datetime import datetime
-import hashlib
 import pickle
-import re
 import sys
 import subprocess
-import time
 from sgtk.platform.qt import QtCore
 
 
@@ -25,6 +20,12 @@ try:
     import nuke
 except ImportError:
     nuke = None
+
+
+# DD imports
+from dd.runtime import api
+api.load('wam')
+from wam.utils.proc import formCleanEnv
 
 
 class Renderer(object):
@@ -253,9 +254,10 @@ class ShooterThread(QtCore.QThread):
             '--render_info', pickle.dumps(self.render_info['render_info']),
         ]
 
-        env = copy.deepcopy(os.environ)
-        env["TANK_CONTEXT"] = self.render_info['serialized_context']
-        p = subprocess.Popen(cmd_and_args, stderr=subprocess.PIPE, env=env, bufsize=1)
+        clean_env = formCleanEnv()
+        clean_env["TANK_CONTEXT"] = self.render_info['serialized_context']
+
+        p = subprocess.Popen(cmd_and_args, stderr=subprocess.PIPE, env=clean_env, bufsize=1)
 
         output_lines = []
 
