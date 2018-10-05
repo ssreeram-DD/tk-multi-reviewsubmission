@@ -9,6 +9,11 @@ from sgtk.util.filesystem import ensure_folder_exists
 
 import nuke
 
+from dd.runtime import api
+api.load('Preferences')
+from preferences import Preferences
+
+
 
 def __create_scale_node(width, height):
     """
@@ -115,6 +120,14 @@ def render_in_nuke(path_to_frames, path_to_movie, extra_write_node_mapping, widt
 
             # now create the slate/burnin node
             burn = nuke.nodePaste(render_info.get('burnin_nk'))
+
+            prefs = Preferences("show_preferences.yaml")
+
+            if prefs.get('playblast_defaults'):
+                show_ornaments = prefs.get('playblast_defaults').get('show_ornaments')
+                if show_ornaments:
+                    burn['disable'].setValue(True)
+
             burn.setInput(0, read)
 
             font = render_info.get('slate_font')
